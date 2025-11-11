@@ -13,11 +13,33 @@ gh extension install lucassarten/gh-deployments
 
 - `GITHUB_TOKEN` (env): required. A personal access token with repo/workflow permissions.
 
-- `repo` (flag/variable): If not provided, the tool attempts to detect the current repository via local git context.
-
 ## Run / Usage
 
 After installing as a GitHub CLI extension you can run the commands with `gh deployments [command]`.
+
+```
+Usage:
+  gh-deployments review [flags]
+
+Flags:
+      --action string      Action to perform in non-interactive mode: approve or reject
+      --actor string       Filter workflows by actor login
+      --env-all            Act on all pending environments for the selected workflow (non-interactive)
+      --env-names string   Comma-separated environment names to act on (non-interactive)
+      --event string       Filter workflows by event (e.g. push, pull_request)
+  -h, --help               help for review
+      --order string       Sort order: asc or desc (default "desc")
+  -p, --poll               Poll for pending deployments if none are found
+      --run int            Workflow run id to act on
+      --sort string        Sort by: created_at, actor, name (default "created_at")
+      --workflow string    Workflow yaml file name to act on (e.g. deploy.yml)
+
+Global Flags:
+  -r, --repo string   Repository to search in (owner/repo)
+```
+
+The CLI supports interactive and non-interactive modes for reviewing pending deployments. When specifying the `--action` flag, the tool operates in non-interactive mode, which will only perform actions if the provided flags narrow down the action to a specific workflow run.
+
 
 Examples:
 
@@ -25,11 +47,31 @@ Examples:
 gh deployments review
 ```
 
-When listing pending workflows the tool will display candidates like:
+> To select from pending deployments interactively.
 
-`<workflow title> - <actor> - <dd/mm/yy hh:mm:ss>` (e.g. `Deploy site - octocat - 02/11/25 14:05:06`)
+```bash
+gh deployments review --actor <actor-login> --poll
+```
 
-Select a workflow and then choose to `Approve` or `Reject` the pending deployment.
+> To filter pending deployments by actor login and poll until at least one is found, then select interactively.
+
+```bash
+gh deployments review --action approve
+```
+
+> Will approve the latest workflow run in the repository if there is only one pending deployment.
+
+```bash
+gh deployments review --action approve --env-names plan --workflow deploy.yml
+```
+
+> Will approve the `plan` environment for all pending deployments from the `deploy.yml` workflow, if there is only one workflow run pending (otherwise provide `--run`).
+
+```bash
+gh deployments review --action approve --env-all --run 19263528744
+```
+
+> Will approve all pending environments for the workflow run with ID `19263528744`.
 
 ## Contributing
 
