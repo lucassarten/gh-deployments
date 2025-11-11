@@ -1,0 +1,15 @@
+name: test
+on:
+  workflow_dispatch:
+
+jobs:
+  release:
+    environment: test
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Deployment approved"
+  release-prod:
+    environment: production
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Production deployment approved"
