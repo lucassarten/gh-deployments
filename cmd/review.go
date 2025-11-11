@@ -36,7 +36,7 @@ var reviewCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(reviewCmd)
 
-	reviewCmd.Flags().BoolVarP(&poll, "poll", "p", false, "Poll for deployments")
+	reviewCmd.Flags().BoolVarP(&poll, "poll", "p", false, "Poll for pending deployments if none are found")
 
 	s.Suffix = " Fetching workflows..."
 	s.Color("bold", "fgBlue")
@@ -87,7 +87,7 @@ func review(repoArg string, poll bool, f *cmdutil.Factory) {
 
 	if len(pendingWorkflows.WorkflowRuns) == 0 {
 		s.Stop()
-		log.Printf("No pending workflows in %s/%s", repo.Owner, repo.Name)
+		fmt.Printf("No pending workflows in %s/%s", repo.Owner, repo.Name)
 		return
 	}
 
@@ -114,11 +114,48 @@ func review(repoArg string, poll bool, f *cmdutil.Factory) {
 		log.Fatalf("failed to get pending deployments: %v", err)
 	}
 
-	if len(deployments) != 1 {
-		os.Exit(1) // havent handled multiple deployments yet
+	if len(deployments) == 0 {
+		log.Fatalf("no pending deployments found for workflow %s", *pendingWorkflows.WorkflowRuns[workflowIdx].Name)
 	}
 
-	deployment := deployments[0]
+	var targetEnvIDs []int64
+	var envDisplay string
+	if len(deployments) == 1 {
+		// Single deployment, use it directly
+		targetEnvIDs = []int64{*deployments[0].Environment.ID}
+		envDisplay = *deployments[0].Environment.Name
+	} else {
+		envOptions := make([]string, len(deployments)+1)
+		envOptions[0] = fmt.Sprintf("All (%d environments)", len(deployments))
+		
+		for i, d := range deployments {
+			envOptions[i+1] = *d.Environment.Name
+		}
+
+		envIdx, err := f.Prompter.Select("Select Environment", "", envOptions)
+
+		if err != nil {
+			if strings.Contains(err.Error(), "interrupt") {
+				return
+			}
+			log.Fatal(err.Error())
+			return
+		}
+
+		if envIdx == 0 {
+			// All selected
+			for _, d := range deployments {
+				if d.Environment != nil && d.Environment.ID != nil {
+					targetEnvIDs = append(targetEnvIDs, *d.Environment.ID)
+				}
+			}
+			envDisplay = fmt.Sprintf("%d environments", len(targetEnvIDs))
+		} else {
+			sel := deployments[envIdx]
+			targetEnvIDs = []int64{*sel.Environment.ID}
+			envDisplay = *sel.Environment.Name
+		}
+	}
 
 	actionIdx, err := f.Prompter.Select("Select Action", "Approve", actions)
 
@@ -135,17 +172,19 @@ func review(repoArg string, poll bool, f *cmdutil.Factory) {
 		action = "rejected"
 	}
 
-	_, _, err = client.Actions.PendingDeployments(ctx, repo.Owner, repo.Name, *pendingWorkflows.WorkflowRuns[workflowIdx].ID, &github.PendingDeploymentsRequest{
-		EnvironmentIDs: []int64{*deployment.Environment.ID},
+	req := &github.PendingDeploymentsRequest{
+		EnvironmentIDs: targetEnvIDs,
 		State:          action,
 		Comment:        fmt.Sprintf("%s via gh-deployments", action),
-	})
+	}
+
+	_, _, err = client.Actions.PendingDeployments(ctx, repo.Owner, repo.Name, *pendingWorkflows.WorkflowRuns[workflowIdx].ID, req)
 	if err != nil {
 		log.Fatalf("failed to approve/reject deployment: %v", err)
 	}
 
 	out := f.IOStreams.Out
 	cs := f.IOStreams.ColorScheme()
-	fmt.Fprintf(out, "%s Job %s %s", cs.SuccessIcon(), cs.Cyan(*pendingWorkflows.WorkflowRuns[workflowIdx].Name), action)
+	fmt.Fprintf(out, "%s Job %s to %s %s", cs.SuccessIcon(), cs.Cyan(*pendingWorkflows.WorkflowRuns[workflowIdx].Name), cs.Cyan(envDisplay), action)
 	fmt.Fprintln(out)
 }
