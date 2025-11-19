@@ -195,7 +195,21 @@ func review(f *cmdutil.Factory) {
 		createdLocal := e.run.GetCreatedAt().Local().Format("02/01/06 15:04:05")
 		// include workflow filename in candidate to help users
 		displayFile := e.workflowFile
-		candidates[i] = fmt.Sprintf("%s [%s] - %s - %s", e.run.GetDisplayTitle(), displayFile, e.run.GetActor().GetLogin(), createdLocal)
+		jobs, _, jerr := client.Actions.ListWorkflowJobs(ctx, repo.Owner, repo.Name, *e.run.ID, &github.ListWorkflowJobsOptions{})
+		if jerr != nil {
+			// don't fail just for missing job info — log at debug and continue
+			log.Debugf("failed to list workflow jobs for run %d: %v", *e.run.ID, jerr)
+		}
+		jobNames := []string{}
+		if jobs != nil {
+			for _, j := range jobs.Jobs {
+				jobNames = append(jobNames, j.GetName())
+			}
+			jobName := strings.Join(jobNames, ", ")
+			candidates[i] = fmt.Sprintf("%s [%s] | %s - %s - %s", e.run.GetDisplayTitle(), jobName, displayFile, e.run.GetActor().GetLogin(), createdLocal)
+		} else {
+			candidates[i] = fmt.Sprintf("%s [%s] | %s - %s", e.run.GetDisplayTitle(), displayFile, e.run.GetActor().GetLogin(), createdLocal)
+		}
 	}
 	s.Stop()
 
